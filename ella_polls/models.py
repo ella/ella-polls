@@ -10,7 +10,7 @@ from django.utils.translation import ugettext_lazy as _
 from django.utils.safestring import mark_safe
 
 from ella.core.models import Publishable
-from ella.core.cache import get_cached_object, get_cached_list
+from ella.core.cache import get_cached_object, cache_this
 from ella.core.box import Box
 
 from ella_polls.conf import polls_settings
@@ -145,7 +145,6 @@ class Poll(BasePoll):
         return Vote.objects.filter(poll=self, ip_address=ip_address,
             time__gte=treshold).count() > 0
 
-
 class Contest(BasePoll, Publishable):
     class Meta:
         verbose_name = _('Contest')
@@ -156,8 +155,9 @@ class Contest(BasePoll, Publishable):
         return self.title
 
     @property
+    @cache_this(lambda f, self: 'contest:%d:questions' % self.pk)
     def questions(self):
-        return get_cached_list(Question, contest=self)
+        return list(Question.objects.filter(contest=self))
 
     @property
     def right_choices(self):
@@ -197,8 +197,9 @@ class Quiz(BasePoll, Publishable):
         return self.title
 
     @property
+    @cache_this(lambda f, self: 'quiz:%d:questions' % self.pk)
     def questions(self):
-        return get_cached_list(Question, quiz=self)
+        return list(Question.objects.filter(quiz=self))
 
     def get_result(self, points):
         """
@@ -232,7 +233,6 @@ class Question(models.Model):
     def choices(self):
         # FIXME - cache this, it is a queryset because of ModelChoiceField
         return self.choice_set.all()
-        #return get_cached_list(Choice, question=self)
 
     def get_total_votes(self):
         if not hasattr(self, '_total_votes'):
@@ -471,11 +471,12 @@ class Result(models.Model):
             return self.title
         return u'%s (%d - %d)' % (self.quiz, self.points_from, self.points_to)
 
+    @cache_this(lambda f, self: 'result:%d:total' % self.quiz.pk)
     def total(self):
         """
         Returns count of displayed quiz results
         """
-        res = get_cached_list(Result, quiz=self.quiz)
+        res = Result.objects.filter(quiz=self.quiz)
         return sum(r.count for r in res)
 
     def percentage(self):
